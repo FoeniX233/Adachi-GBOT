@@ -109,7 +109,7 @@ export class Adachi {
 			if ( this.bot.config.area === "private" ) {
 				/* 私域机器人 */
 				this.bot.ws.on( "GUILD_MESSAGES", ( data: Message ) => {
-					if ( data.eventType === 'MESSAGE_CREATE' )
+					if ( data.eventType === 'AT_MESSAGE_CREATE' )
 						this.parseGroupMsg( this )( data );
 				} );
 			} else {
