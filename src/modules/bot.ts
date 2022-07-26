@@ -379,10 +379,10 @@ export class Adachi {
 			// AvailableIntentsEventsEnum.GUILD_MESSAGES //仅私域可用
 		];
 		/* 仅私域BOT可以监听非@自己的消息 */
-		/* if ( config.area === "private" ) {
+		if ( config.area === "private" ) {
 			intents.push( AvailableIntentsEventsEnum.GUILD_MESSAGES,
 				AvailableIntentsEventsEnum.FORUMS_EVENT );
-		} */
+		}
 		return intents;
 		
 	}
