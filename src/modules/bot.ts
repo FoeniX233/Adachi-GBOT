@@ -380,7 +380,7 @@ export class Adachi {
 		];
 		/* 仅私域BOT可以监听非@自己的消息 */
 		if ( config.area === "private" ) {
-			intents.push( AvailableIntentsEventsEnum.PUBLIC_GUILD_MESSAGES,
+			intents.push( AvailableIntentsEventsEnum.GUILD_MESSAGES,
 				AvailableIntentsEventsEnum.FORUMS_EVENT );
 		}
 		return intents;
