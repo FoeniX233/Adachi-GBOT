@@ -207,16 +207,16 @@ export class NoteService implements Service {
 		const temp = await bot.redis.getString( `adachi.msgId-temp-${ guildID }-${ channelID }` );
 		const msgId = temp === "" ? undefined : temp;
 		//缓存为空，则推送主动消息过去
-		const sendMessage = await bot.message.getSendPrivateFunc( guildID, userID, msgId );
-		await sendMessage( { content: data } );
+		// const sendMessage = await bot.message.getSendPrivateFunc( guildID, userID, msgId );
+		// await sendMessage( { content: data } );
 		// if ( temp === "" ) {
-		// 	//缓存为空，则推送主动消息过去
-		// 	const sendMessage = await bot.message.getSendPrivateFunc( guildID, userID, msgId );
-		// 	await sendMessage( { content: data } );
+		     // //缓存为空，则推送主动消息过去
+			// const sendMessage = await bot.message.getSendPrivateFunc( guildID, userID, msgId );
+			// await sendMessage( { content: data } );
 		// } else {
-		// 	//存在可用消息，则发送到频道
-		// 	const sendMessage = await bot.message.sendGuildMessage( channelID, msgId );
-		// 	await sendMessage( { content: `<@!${ userID }>\n` + data } );
+			//存在可用消息，则发送到频道
+		const sendMessage = await bot.message.sendGuildMessage( channelID, msgId );
+		await sendMessage( { content: `<@!${ userID }>\n` + data } );
 		// }
 	}
 }
