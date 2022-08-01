@@ -15,11 +15,11 @@ import WebConfiguration from "@modules/logger";
 import WebConsole from "@web-console/backend";
 import RefreshConfig from "@modules/management/refresh";
 import { BasicRenderer } from "@modules/renderer";
-import Command, { BasicConfig, MatchResult } from "@modules/command/main";
+import Command, { BasicConfig, MatchResult, removeHeaderInContent } from "@modules/command/main";
 import Authorization, { AuthLevel } from "@modules/management/auth";
 import MsgManager from "@modules/message";
 import MsgManagement, * as Msg from "@modules/message";
-import { GuildsMove, MemberMessage, Message, MessageScope } from "@modules/utils/message";
+import { MemberMessage, Message, MessageScope } from "@modules/utils/message";
 import { JobCallback, scheduleJob } from "node-schedule";
 import { trim } from "lodash";
 import Qiniuyun from "@modules/qiniuyun";
@@ -102,10 +102,9 @@ export class Adachi {
 	}
 	
 	public run(): BOT {
-		Plugin.load( this.bot ).then( async commands => {
+		Plugin.load( this.bot ).then( commands => {
 			this.bot.command.add( commands );
-			//是否登陆成功
-			this.botOnline();
+			
 			/* 事件监听 ,根据机器人类型选择能够监听的事件 */
 			if ( this.bot.config.area === "private" ) {
 				/* 私域机器人 */
@@ -125,28 +124,26 @@ export class Adachi {
 				if ( data.eventType === 'DIRECT_MESSAGE_CREATE' )
 					this.parsePrivateMsg( this )( data );
 			} );
-			/* 成员变动相关, 频道过多容易造成内存泄漏？暂时注释试试 */
-			// this.bot.ws.on( "GUILD_MEMBERS", ( data: MemberMessage ) => {
-			// 	if ( data.eventType === 'GUILD_MEMBER_REMOVE' )
-			// 		this.membersDecrease( this )( data.msg.user.id );
-			// } )
-			this.bot.logger.info( "事件监听启动成功" );
+			/* 成员变动相关 */
+			this.bot.ws.on( "GUILD_MEMBERS", ( data: MemberMessage ) => {
+				if ( data.eventType === 'GUILD_MEMBER_REMOVE' )
+					this.userDecrease( this )( data.msg.guild_id, data.msg.user.id );
+			} )
 			this.getBotBaseInfo( this )();
+			this.bot.logger.info( "BOT启动成功" );
 		} );
 		
 		
 		scheduleJob( "0 59 */1 * * *", this.hourlyCheck( this ) );
 		scheduleJob( "0 1 4 * * *", this.clearImage( this ) );
-		scheduleJob( "0 1 */3 * * *", this.clearExitUser( this ) );
+		scheduleJob( "0 1 */6 * * *", this.clearExitUser( this ) );
 		scheduleJob( "0 30 */4 * * *", this.getBotBaseInfo( this ) );
 		return this.bot;
 	}
 	
 	private static setEnv( file: FileManagement ): void {
 		file.createDir( "config", "root" );
-		const exist
-			:
-			boolean = file.createYAML( "setting", BotConfig.initObject );
+		const exist: boolean = file.createYAML( "setting", BotConfig.initObject );
 		if ( exist ) {
 			return;
 		}
@@ -205,7 +202,10 @@ export class Adachi {
 		}
 		
 		/* 匹配不到任何指令，触发聊天，对私域进行优化，不@BOT不会触发自动回复 */
-		const content: string = messageData.msg.content.trim() || '';
+		let content: string = messageData.msg.content.trim() || '';
+		/* 首先排除有些憨憨带上的 [] () |, 模糊匹配可能会出现这种情况但成功 */
+		messageData.msg.content = content = content.replace( /\[|\]|\(|\)|\|/g, "" );
+		
 		if ( this.bot.config.autoChat && content.length < 20 && !unionRegExp.test( content ) && isAt && !isPrivate ) {
 			await autoReply( messageData, sendMessage );
 			return;
@@ -222,22 +222,19 @@ export class Adachi {
 		
 		/* 获取匹配指令对应的处理方法 */
 		const usable: BasicConfig[] = cmdSet.filter( el => !limits.includes( el.cmdKey ) );
+		
 		for ( let cmd of usable ) {
 			const res: MatchResult = cmd.match( content );
 			if ( res.type === "unmatch" ) {
 				if ( res.missParam && res.header ) {
-					const text: string = cmd.ignoreCase ? content.toLowerCase() : content;
-					messageData.msg.content = trim(
-						Msg.removeStringPrefix( text, res.header.toLowerCase() )
-							.replace( / +/g, " " )
-					);
 					const embedMsg = new EmbedMsg( `指令参数缺失或者错误`,
 						undefined,
 						`指令参数缺失或者错误`,
 						messageData.msg.author.avatar,
-						`你的参数：${ messageData.msg.content }`,
+						`你的参数：${ res.param ? res.param : "无" }`,
 						`参数格式：${ cmd.desc[1] }`,
-						`参数说明：${ cmd.detail.length > 0 ? cmd.detail : "暂无" }` );
+						`参数说明：${ cmd.detail }`,
+						`\n[ ] 必填, ( ) 选填, | 选择` );
 					await sendMessage( { embed: embedMsg } );
 					return;
 				}
@@ -247,7 +244,7 @@ export class Adachi {
 				const text: string = cmd.ignoreCase
 					? content.toLowerCase() : content;
 				messageData.msg.content = trim(
-					Msg.removeStringPrefix( text, res.header.toLowerCase() )
+					removeHeaderInContent( text, res.header.toLowerCase() )
 						.replace( / +/g, " " )
 				);
 			}
@@ -259,10 +256,8 @@ export class Adachi {
 			/* 指令数据统计与收集 */
 			await this.bot.redis.incHash( "adachi.hour-stat", userID.toString(), 1 ); //小时使用过的指令数目
 			await this.bot.redis.incHash( "adachi.command-stat", cmd.cmdKey, 1 );
+			return;
 		}
-		/* 所有指令都没有匹配到 */
-		
-		
 	}
 	
 	/* 处理私聊事件 */
@@ -328,7 +323,7 @@ export class Adachi {
 		} );
 		
 		if ( isAtBot.length > 0 ) {
-			const atBOTReg: RegExp = new RegExp( `<@!${botID}>` );
+			const atBOTReg: RegExp = new RegExp( `<@!${botID}>`, "g" );
 			const content: string = msg.msg.content;
 			msg.msg.content = content
 				.replace( atBOTReg, "" )
@@ -418,7 +413,6 @@ export class Adachi {
 	private getBotBaseInfo( that: Adachi ): JobCallback {
 		const bot = that.bot;
 		return async function () {
-			console.log( "开始获取自身信息" )
 			await bot.redis.deleteKey( `adachi.guild-used` ); //重启重新获取BOT所在频道信息
 			const responseMeApi = await bot.client.meApi.me();
 			if ( !responseMeApi.data.id ) {
@@ -457,24 +451,26 @@ export class Adachi {
 		}
 	}
 	
-	private botOnline() {
-		if ( this.bot.ws.alive ) {
-			this.bot.logger.info( "BOT启动成功" );
+	/* 用户退出频道 */
+	private userDecrease( that: Adachi ) {
+		const bot = that.bot
+		return async function ( guildId: string, userId: string ) {
+			const dbKey = `adachi.user-used-groups-${ userId }`;
+			await bot.redis.delSetMember( dbKey, guildId );
 		}
 	}
 	
-	/* 用户退出频道事件 */
-	private membersDecrease( that: Adachi ) {
+	/* 清除用户使用记录 */
+	private clearUsedInfo( that: Adachi ) {
 		const bot = that.bot
 		return async function ( userId: string ) {
 			
-			/* 范获取用户信息新增错误删除功能 */
 			const userInfo = await getMemberInfo( userId );
-			
 			const dbKey = `adachi.user-used-groups-${ userId }`;
+			const guilds = await bot.redis.getSet( `adachi.user-used-groups-${ userId }` );
 			
-			/* 与机器人还有共同频道就不清除数据 */
-			if ( userInfo ) {
+			/* 与机器人还有共同频道就不清除数据，或者只是信息获取失败，暂时不处理 */
+			if ( userInfo || guilds.length > 1 ) {
 				return;
 			}
 			
@@ -497,12 +493,12 @@ export class Adachi {
 	private clearExitUser( that: Adachi ): JobCallback {
 		const bot = that.bot;
 		return function (): void {
+			bot.logger.info( "开始检测用户是否退出BOT相关频道~" );
 			bot.redis.getKeysByPrefix( `adachi.user-used-groups-*` ).then( async data => {
 				data.forEach( value => {
 					const userId = value.split( "-" )[3];
-					that.membersDecrease( that )( userId );
+					that.clearUsedInfo( that )( userId );
 				} );
-				bot.logger.info( "重新检测用户使用数据完成~" );
 			} );
 		}
 	}

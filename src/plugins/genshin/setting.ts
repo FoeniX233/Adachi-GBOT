@@ -56,7 +56,7 @@ const domain: OrderConfig = {
 const wish: OrderConfig = {
 	type: "order",
 	cmdKey: "silvery-star-wish",
-	desc: [ "祈愿抽卡", "(次数|until)" ],
+	desc: [ "祈愿", "(次数|until)" ],
 	headers: [ "wish" ],
 	regexps: [ "(\\d+|until)?" ],
 	main: "achieves/wish",
@@ -99,7 +99,7 @@ const slip: OrderConfig = {
 	type: "order",
 	cmdKey: "by-ha-slip",
 	desc: [ "御神签", "" ],
-	headers: [ "s" ],
+	headers: [ "ysq" ],
 	regexps: [],
 	main: "achieves/slip"
 };
@@ -207,7 +207,6 @@ const privateCancel: OrderConfig = {
 	headers: [ "pc" ],
 	regexps: [ "\\d+" ],
 	main: "achieves/private/cancel",
-	// scope: MessageScope.Private,
 	detail: "序号在授权服务列表查看"
 };
 
@@ -228,7 +227,7 @@ const privateReplace: OrderConfig = {
 	cmdKey: "silvery-star-private-replace",
 	desc: [ "更新授权", "[序号] [cookie]" ],
 	headers: [ "pr" ],
-	regexps: [ "\\d+", ".+" ],
+	regexps: [ "\\d+\\s", ".+" ],
 	ignoreCase: false,
 	main: "achieves/private/replace",
 	scope: MessageScope.Private,
@@ -243,7 +242,6 @@ const privateReorder: OrderConfig = {
 	headers: [ "reorder" ],
 	regexps: [ "(\\s|\\d)+" ],
 	main: "achieves/private/reorder",
-	// scope: MessageScope.Private,
 	detail: "对当前的授权服务列表的顺序重新调整\n" +
 		"例如用户有 5 个订阅的授权服务账号，则新排序列表的格式为：5 2 3 1 4"
 };
@@ -264,9 +262,8 @@ const privateNoteEvent: OrderConfig = {
 	headers: [ "nt" ],
 	regexps: [ "[\\d ]+" ],
 	main: "achieves/private/note/set-time",
-	// scope: MessageScope.Private,
 	detail: "用于设置 BOT 自动提醒时间点，树脂量可设置多个\n" +
-		"如: 60 90 120 160，数字间用空格隔开，频道私信受限，无法正常推送"
+		"如: 60 90 120 160，数字间用空格隔开"
 };
 
 const privateMysSetAppoint: OrderConfig = {
@@ -276,7 +273,6 @@ const privateMysSetAppoint: OrderConfig = {
 	headers: [ "appoint" ],
 	regexps: [ "\\d+", "[\\w\\u4e00-\\u9fa5]+" ],
 	main: "achieves/private/query/appoint",
-	// scope: MessageScope.Private,
 	detail: "该指令用于指定查询卡片中的头像图片"
 };
 
@@ -293,9 +289,9 @@ const privateAbyssQuery: SwitchConfig = {
 	type: "switch",
 	mode: "divided",
 	cmdKey: "silvery-star-private-abyss",
-	desc: [ "深渊查询", "(序号) (-l)" ],
+	desc: [ "深渊查询", "(序号)" ],
 	header: "",
-	regexp: [ "(\\d+)?", "(-l)?" ],
+	regexp: [ "(\\d+)?" ],
 	main: "achieves/private/query/abyss",
 	stop: false,
 	onKey: "caby",
@@ -321,7 +317,6 @@ const privateToggleSign: OrderConfig = {
 	headers: [ "signin" ],
 	regexps: [ "\\d+" ],
 	main: "achieves/private/sign-in/main",
-	// scope: MessageScope.Private,
 	detail: "该指令用于切换米游社签到的开/关状态"
 };
 
@@ -332,7 +327,6 @@ const privateToggleNote: OrderConfig = {
 	headers: [ "tnote" ],
 	regexps: [ "\\d+" ],
 	main: "achieves/private/note/toggle",
-	// scope: MessageScope.Private,
 	detail: "该指令用于切换树脂及冒险探索定时提示的开/关状态"
 };
 
@@ -352,13 +346,12 @@ export default <PluginSetting>{
 	cfgList: [
 		bind, today, guide, information, alias, domain,
 		getArtifact, impArtifact, wish, choosePool,
-		slip, uidQuery, epitomizedPath, almanac,
-		privateNoteEvent, privateNowNote, privateSubList,
-		privateConfirm, privateSubscribe, privateReplace,
-		privateAbyssQuery, privateCancel, privateRemove,
-		privateReorder, privateToggleSign, privateLedger,
-		privateCharQuery, privateToggleNote, privateMysQuery,
-		privateMysSetAppoint
+		epitomizedPath, slip, uidQuery, privateMysQuery,
+		almanac, privateMysSetAppoint, privateSubscribe, privateReplace,
+		privateConfirm, privateCancel, privateRemove,
+		privateSubList, privateReorder, privateToggleSign,
+		privateToggleNote, privateNoteEvent, privateNowNote,
+		privateAbyssQuery, privateLedger, privateCharQuery,
 	]
 }
 ;

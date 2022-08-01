@@ -1,9 +1,9 @@
 import * as cmd from "./index";
+import { Enquire, Order, Switch } from "./index";
 import bot from "ROOT";
 import Plugin, { PluginRawConfigs } from "@modules/plugin";
 import FileManagement from "@modules/file";
 import { RefreshCatch } from "@modules/management/refresh";
-import { Enquire, Order, Switch } from "./index";
 import { BOT } from "../bot";
 import { trimStart, without } from "lodash";
 import { AuthLevel } from '@modules/management/auth'
@@ -21,6 +21,7 @@ export interface Unmatch {
 	type: "unmatch";
 	missParam: boolean;
 	header?: string;
+	param?: string;
 }
 
 export type MatchResult = cmd.OrderMatchResult |
@@ -192,7 +193,8 @@ export default class Command {
 						list.push(
 							...el.genRegExps.map( r => `(${ r.source })` )
 						);
-						list.push( `(${ el.header })` ); //适配缺少参数的unmatch
+						/* 适配缺少参数的unmatch, 适配中文指令模糊识别 */
+						list.push( /[\u4e00-\u9fa5]/.test( el.header ) ? `(${ el.header.replace( bot.config.header, '' ) })` : `(${ el.header })` );
 					} );
 				} else if ( cmd.type === "switch" ) {
 					list.push( ...cmd.regexps.map( r => `(${ r.source })` ) );
@@ -200,7 +202,7 @@ export default class Command {
 					list.push( ...cmd.sentences.map( s => `(${ s.reg.source })` ) );
 				}
 			} );
-			return new RegExp( `(${ list.join( "|" ) })`, "i" );
+			return new RegExp( `(${ list.join( "|" ) })`, "gi" );
 		}
 	}
 	
@@ -228,4 +230,11 @@ export default class Command {
 		const commands: BasicConfig[] = this[type][level];
 		return commands.find( el => el.cmdKey == key );
 	}
+}
+
+export function removeHeaderInContent( string: string, prefix: string ): string {
+	if ( prefix.charAt( 0 ) === bot.config.header )
+		return string.replace( new RegExp( `${ prefix.charAt(0) }?${ prefix.slice(1) }`, "g" ), '' );
+	else
+		return string.replace( new RegExp( prefix ), '' );
 }
