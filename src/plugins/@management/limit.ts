@@ -1,10 +1,11 @@
 import { InputParameter, SwitchMatchResult } from "@modules/command";
 import idParser from "#@help/utils/id-parser";
 
-export async function main( {
-	                            sendMessage, matchResult,
-	                            redis, logger
-                            }: InputParameter ): Promise<void> {
+export async function main
+( {
+	  sendMessage, matchResult,
+	  redis, logger
+  }: InputParameter ): Promise<void> {
 	const match = <SwitchMatchResult>matchResult;
 	const states: string = match.isOn() ? "开启" : "关闭";
 	
@@ -16,7 +17,7 @@ export async function main( {
 	} else {
 		let dbKey: string, reply: string;
 		dbKey = `adachi.user-command-limit-${ targetID }`;
-		reply = `用户 ${ targetID } 的 ${ key } 权限已${ states }`;
+		reply = `用户 [ <@!${ targetID }> ] 的 ${ key } 权限已${ states }`;
 		if ( match.isOn() ) {
 			await redis.delListElement( dbKey, key );
 		} else {

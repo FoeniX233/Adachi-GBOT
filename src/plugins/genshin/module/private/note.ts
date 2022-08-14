@@ -8,7 +8,7 @@ import { dailyNotePromise } from "#genshin/utils/promise";
 import { getGidMemberIn } from "@modules/utils/account";
 
 interface PushEvent {
-	type: "resin" | "expedition";
+	type: "resin" | "homeCoin" | "transformer" | "expedition";
 	job: Job;
 }
 
@@ -61,10 +61,14 @@ export class NoteService implements Service {
 			const SET_TIME = <Order>bot.command.getSingle( "silvery-star-note-set-time", auth );
 			const TOGGLE_NOTE = <Order>bot.command.getSingle( "silvery-star-private-toggle-note", auth );
 			
+			const appendSetTime = SET_TIME ? `也可以通过「${ SET_TIME.getHeaders()[0] }+账户序号+树脂量」来设置\n` : "";
+			const appendToggleNote = TOGGLE_NOTE ? `如果你希望关闭定时提醒功能，可以使用「${ TOGGLE_NOTE.getHeaders()[0] }+账户序号」` : "";
+			
 			return "实时便笺功能已开启：\n" +
-				"树脂数量达到 120 和 155 时和探索结束会进行私聊推送\n" +
-				`也可以通过「${ SET_TIME.getHeaders()[0] }+序号+树脂量」来设置\n` +
-				`如果你希望关闭定时提醒功能，可以使用「${ TOGGLE_NOTE.getHeaders()[0] }+序号」`;
+				"默认情况下，树脂数量达到 120 和 155 时会发送进行私聊推送\n" +
+				appendSetTime +
+				"当洞天宝钱已满、质变仪可用和冒险探索结束时，BOT 也会进行提醒\n" +
+				appendToggleNote;
 		}
 	}
 	
@@ -84,7 +88,7 @@ export class NoteService implements Service {
 	private scheduleJobOn(): void {
 		this.refreshPushEvent()
 			.catch( this.feedbackCatch );
-		this.globalEvent = scheduleJob( "0 0 */1 * * *", () => {
+		this.globalEvent = scheduleJob( "0 */55 * * * *", () => {
 			this.refreshPushEvent().catch( this.feedbackCatch );
 		} );
 	}
@@ -149,6 +153,7 @@ export class NoteService implements Service {
 		/* 清空当前事件 */
 		this.clearEvents();
 		
+		/* 树脂提醒 */
 		for ( let t of this.timePoint ) {
 			/* 当前树脂量超过设定量则不处理 */
 			if ( this.globalData.currentResin >= t ) {
@@ -156,15 +161,41 @@ export class NoteService implements Service {
 			}
 			
 			const recovery: number = parseInt( this.globalData.resinRecoveryTime );
-			const remaining: number = recovery - ( 160 - t ) * 8 * 60;
+			const remaining: number = recovery - ( this.globalData.maxResin - t ) * 8 * 60;
 			const time = new Date( now + remaining * 1000 );
 			
 			const job: Job = scheduleJob( time, async () => {
-				await this.sendMessage( `[ UID${ this.parent.setting.uid } ] - 树脂量已经到达 ${ t } 了哦~` );
+				await this.sendMessage( `[ UID${ this.parent.setting.uid } ] - 树脂量已经到达 ${ t } 了 ~` );
 			} );
 			this.events.push( { type: "resin", job } );
 		}
 		
+		/* 宝钱提醒 */
+		if ( this.globalData.maxHomeCoin !== 0 && this.globalData.currentHomeCoin < this.globalData.maxHomeCoin ) {
+			const recovery: number = parseInt( this.globalData.homeCoinRecoveryTime );
+			const time = new Date( now + recovery * 1000 );
+			
+			const job: Job = scheduleJob( time, async () => {
+				await this.sendMessage( `[UID${ this.parent.setting.uid }] - 洞天宝钱已经满了 ~` );
+			} );
+			this.events.push( { type: "homeCoin", job } );
+		}
+		
+		/* 参变仪提醒 */
+		if ( this.globalData.transformer.obtained ) {
+			const { day, hour, minute, second, reached } = this.globalData.transformer.recoveryTime;
+			if ( !reached ) {
+				const recovery = ( ( day * 24 + hour ) * 60 + minute ) * 60 + second;
+				const time = new Date( now + recovery * 1000 );
+				
+				const job: Job = scheduleJob( time, async () => {
+					await this.sendMessage( `[UID${ this.parent.setting.uid }] - 参量质变仪已就绪 ~` );
+				} );
+				this.events.push( { type: "homeCoin", job } );
+			}
+		}
+		
+		/* 派遣提醒 */
 		const expeditions: Expedition[] = this.globalData.expeditions
 			.filter( el => el.status === "Ongoing" )
 			.sort( ( x, y ) => {
@@ -206,9 +237,11 @@ export class NoteService implements Service {
 			bot.logger.error( "私信发送失败，检查成员是否退出频道 ID：" + userID );
 			return;
 		}
-		const channelID = await bot.redis.getHashField( `adachi.guild-used-channel`, guildID );
-		const temp = await bot.redis.getString( `adachi.msgId-temp-${ guildID }-${ channelID }` );
-		const msgId = temp === "" ? undefined : temp;
+		// const channelID = await bot.redis.getHashField( `adachi.guild-used-channel`, guildID );
+		// const temp = await bot.redis.getString( `adachi.msgId-temp-${ guildID }-${ channelID }` );
+		// const msgId = temp === "" ? undefined : temp;
+		const msgId = undefined;
+		
 		//缓存为空，则推送主动消息过去
 		// const sendMessage = await bot.message.getSendPrivateFunc( guildID, userID, msgId );
 		// await sendMessage( { content: data } );

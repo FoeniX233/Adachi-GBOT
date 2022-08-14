@@ -58,7 +58,7 @@ export class SignInService implements Service {
 	}
 	
 	
-	private async sign( reply: boolean = true ): Promise<void> {
+	public async sign( reply: boolean = true ): Promise<void> {
 		const { uid, server, cookie } = this.parent.setting;
 		try {
 			const info = <SignInInfo>( await signInInfoPromise( uid, server, cookie ) );
@@ -74,10 +74,17 @@ export class SignInService implements Service {
 				`明天同一时间见~`
 			);
 		} catch ( error ) {
-			await this.sendMessage(
-				"米游社原神签到出错：\n" +
-				"网络波动或者cookie失效\n" +
-				<string>error );
+			let msg = '米游社原神签到出错：\n';
+			if ( <string>error === undefined ) {
+				msg += `网络波动,请稍后重试`;
+			} else if ( <string>error === '尚未登录' ) {
+				msg += `cookie过期，请更新 ~ `;
+			} else if ( <string>error === 'invalid request' ) {
+				msg += `接口报错，请向开发者反馈`;
+			} else {
+				msg += ( <Error>error ).message;
+			}
+			await this.sendMessage( msg );
 			bot.logger.warn( `[UID ${ uid }] ` + <string>error );
 		}
 	}
@@ -109,9 +116,11 @@ export class SignInService implements Service {
 			bot.logger.error( "私信发送失败，检查成员是否退出频道 ID：" + userID );
 			return;
 		}
-		const channelID = await bot.redis.getHashField( `adachi.guild-used-channel`, guildID );
-		const temp = await bot.redis.getString( `adachi.msgId-temp-${ guildID }-${ channelID }` );
-		const msgId = temp === "" ? undefined : temp;
+		// const channelID = await bot.redis.getHashField( `adachi.guild-used-channel`, guildID );
+		// const temp = await bot.redis.getString( `adachi.msgId-temp-${ guildID }-${ channelID }` );
+		// const msgId = temp === "" ? undefined : temp;
+		const msgId = undefined;
+		
 		//缓存为空，则推送主动消息过去
 		const sendMessage = await bot.message.getSendPrivateFunc( guildID, userID, msgId );
 		await sendMessage( { content: data } );

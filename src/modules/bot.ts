@@ -3,7 +3,7 @@
  CreateTime: 2022/6/12
  */
 import * as sdk from "qq-guild-bot";
-import { AvailableIntentsEventsEnum } from "qq-guild-bot";
+import { AvailableIntentsEventsEnum, IGuild } from "qq-guild-bot";
 import * as log from "log4js";
 import moment from "moment";
 import BotConfig from "@modules/config";
@@ -25,6 +25,7 @@ import { trim } from "lodash";
 import Qiniuyun from "@modules/qiniuyun";
 import { getMemberInfo } from "@modules/utils/account";
 import { EmbedMsg } from "@modules/utils/embed";
+import { checkChannelLimit } from "#@management/channel";
 
 
 export interface BOT {
@@ -188,7 +189,6 @@ export class Adachi {
 		isAt: boolean
 	): Promise<void> {
 		
-		
 		/* bot正在重载指令配置 */
 		if ( this.bot.refresh.isRefreshing ) {
 			await sendMessage( "BOT重载配置中，请稍后..." );
@@ -200,15 +200,42 @@ export class Adachi {
 			return;
 		}
 		
-		/* 匹配不到任何指令，触发聊天，对私域进行优化，不@BOT不会触发自动回复 */
+		/* 对设置可用子频道做出适配 */
+		if ( !isPrivate ) {
+			const guildId = messageData.msg.guild_id;
+			const channelId = messageData.msg.channel_id;
+			const { status, msg } = await checkChannelLimit( guildId, channelId );
+			if ( status ) {
+				await sendMessage( msg );
+				return;
+			}
+		}
+		
+		/* 对封禁用户做出提示 */
+		const userId = messageData.msg.author.id;
+		const auth = await this.bot.auth.get( userId );
+		if ( auth === AuthLevel.Banned ) {
+			await sendMessage( `您已成为封禁用户，请与管理员协商 ~ ` );
+			return;
+		}
+		
 		let content: string = messageData.msg.content.trim() || '';
 		/* 首先排除有些憨憨带上的 [] () |, 模糊匹配可能会出现这种情况但成功 */
 		messageData.msg.content = content = content.replace( /\[|\]|\(|\)|\|/g, "" );
-		/* 人工智障聊天 */
-		if ( this.bot.config.autoChat && content.length < 20 && !unionRegExp.test( content ) && isAt && !isPrivate ) {
-			const { autoReply } = require( "@modules/chat" );
-			await autoReply( messageData, sendMessage );
-			return;
+		
+		/* 人工智障聊天, 匹配不到任何指令触发聊天，对私域进行优化，不@BOT不会触发自动回复 */
+		if ( !unionRegExp.test( content ) ) {
+			/* 未识别指令匹配 */
+			const check = this.cmdLimitCheck( content, isPrivate );
+			if ( check ) {
+				await sendMessage( check );
+				return;
+			}
+			if ( this.bot.config.autoChat && content.length < 20 && isAt && !isPrivate ) {
+				const { autoReply } = require( "@modules/chat" );
+				await autoReply( messageData, sendMessage );
+				return;
+			}
 		}
 		
 		/* 用户数据统计与收集，当用户使用了指令之后才统计 */
@@ -329,7 +356,7 @@ export class Adachi {
 			
 			//暂存一下msg_id, guildId, channelId 供推送消息使用
 			await bot.redis.setHashField( `adachi.guild-used-channel`, guild, channelID ); //记录可以推送消息的频道
-			await bot.redis.setString( `adachi.msgId-temp-${ guild }-${ channelID }`, msgID, 290 ); //记录推送消息引用的msgID，被动
+			// await bot.redis.setString( `adachi.msgId-temp-${ guild }-${ channelID }`, msgID, 290 ); //记录推送消息引用的msgID，被动
 			await bot.logger.info( `[A: ${ authorName }][G: ${ guildInfo.name }]: ${ content }` );
 		}
 	}
@@ -357,6 +384,29 @@ export class Adachi {
 		return false;
 	}
 	
+	/* 判断缺少权限或者频道/私聊指令限制 */
+	private cmdLimitCheck( content: string, isPrivate: boolean ): string | undefined {
+		
+		let msg: string | undefined;
+		const privateUnionReg: RegExp = this.bot.command.getUnion( AuthLevel.Master, MessageScope.Private );
+		const groupUnionReg: RegExp = this.bot.command.getUnion( AuthLevel.Master, MessageScope.Group );
+		
+		if ( groupUnionReg.test( content ) ) {
+			if ( !isPrivate ) {
+				msg = `您没有权限执行此命令 ~ `;
+			} else {
+				msg = `该指令仅限群聊使用 ~ `;
+			}
+		} else if ( privateUnionReg.test( content ) ) {
+			if ( isPrivate ) {
+				msg = `您没有权限执行此命令 ~ `;
+			} else {
+				msg = `该指令仅限私聊使用 ~ `;
+			}
+		}
+		return msg;
+	}
+	
 	/* 数据统计 与 超量使用监看 */
 	private hourlyCheck( that: Adachi ): JobCallback {
 		const bot = that.bot;
@@ -376,7 +426,8 @@ export class Adachi {
 						`上个小时内有 ${ length } 个用户指令使用次数超过了阈值` +
 						[ "", ...cmdOverusedUser.map( el => `${ el }: ${ data[el] }次` ) ]
 							.join( "\n  - " );
-					// await bot.message.sendMaster(msg);
+					const sendMessage = await bot.message.getSendMasterFunc();
+					await sendMessage( msg );
 					/*频道限制BOT主动推送消息次数*/
 					bot.logger.info( msg );
 				}
@@ -445,28 +496,13 @@ export class Adachi {
 			}
 			await bot.redis.setString( `adachi.user-bot-id`, responseMeApi.data.id );
 			
-			let currentId = "", over = false, ackMaster = false, count = 10;
-			while ( !over && count >= 0 ) {
-				let responseMeGuilds;
-				if ( currentId !== "" ) {
-					responseMeGuilds = await bot.client.meApi.meGuilds( { after: currentId } );
-				} else {
-					responseMeGuilds = await bot.client.meApi.meGuilds();
-				}
-				const guilds: sdk.IGuild[] = responseMeGuilds.data;
-				if ( guilds.length <= 0 && currentId === "" ) {
-					bot.logger.error( "获取频道信息失败..." );
-				} else if ( guilds.length <= 0 ) {
-					over = true;
-				} else {
-					for ( let guild of guilds ) {
-						await bot.redis.addSetMember( `adachi.guild-used`, guild.id ); //存入BOT所进入的频道
-						if ( !ackMaster && guild.owner_id === bot.config.master ) {
-							await bot.redis.setString( `adachi.guild-master`, guild.id ); //当前BOT主人所在频道
-							ackMaster = true;
-						}
-					}
-					currentId = guilds[guilds.length - 1].id;
+			let ackMaster = false;
+			const guilds = await that.getBotInGuilds( bot );
+			for ( let guild of guilds ) {
+				await bot.redis.addSetMember( `adachi.guild-used`, guild.id ); //存入BOT所进入的频道
+				if ( !ackMaster && guild.owner_id === bot.config.master ) {
+					await bot.redis.setString( `adachi.guild-master`, guild.id ); //当前BOT主人所在频道
+					ackMaster = true;
 				}
 			}
 			if ( !ackMaster ) {
@@ -525,5 +561,29 @@ export class Adachi {
 				} );
 			} );
 		}
+	}
+	
+	/* 获取BOT所在所有频道信息 */
+	public async getBotInGuilds( bot: BOT ): Promise<sdk.IGuild[]> {
+		let currentId = "", over = false, ackMaster = false, count = 10;
+		const allGuilds: sdk.IGuild[] = [];
+		while ( !over && count >= 0 ) {
+			let responseMeGuilds;
+			if ( currentId !== "" ) {
+				responseMeGuilds = await bot.client.meApi.meGuilds( { after: currentId } );
+			} else {
+				responseMeGuilds = await bot.client.meApi.meGuilds();
+			}
+			const guilds: sdk.IGuild[] = responseMeGuilds.data;
+			if ( guilds.length <= 0 && currentId === "" ) {
+				bot.logger.error( "获取频道信息失败..." );
+			} else if ( guilds.length <= 0 ) {
+				over = true;
+			} else {
+				allGuilds.push( ...guilds );
+				currentId = guilds[guilds.length - 1].id;
+			}
+		}
+		return allGuilds;
 	}
 }
