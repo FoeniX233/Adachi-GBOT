@@ -237,7 +237,7 @@ export class NoteService implements Service {
 			bot.logger.error( "私信发送失败，检查成员是否退出频道 ID：" + userID );
 			return;
 		}
-		// const channelID = await bot.redis.getHashField( `adachi.guild-used-channel`, guildID );
+	    const channelID = await bot.redis.getHashField( `adachi.guild-used-channel`, guildID );
 		// const temp = await bot.redis.getString( `adachi.msgId-temp-${ guildID }-${ channelID }` );
 		// const msgId = temp === "" ? undefined : temp;
 		const msgId = undefined;
